@@ -1,0 +1,15 @@
+FROM golang:1.24.2-bookworm AS builder
+WORKDIR /source
+# Официальный commit выпуска RELEASE.2025-04-22T22-12-26Z.
+RUN curl -fSL --retry 4 https://codeload.github.com/minio/minio/tar.gz/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e -o /tmp/minio.tar.gz \
+    && tar -xzf /tmp/minio.tar.gz --strip-components=1 -C /source
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+RUN go build -trimpath -ldflags="-s -w -X github.com/minio/minio/cmd.Version=2025-04-22T22:12:26Z -X github.com/minio/minio/cmd.ReleaseTag=RELEASE.2025-04-22T22-12-26Z -X github.com/minio/minio/cmd.CommitID=0d7408fc9969caf07de6a8c3a84f9fbb10a6739e -X github.com/minio/minio/cmd.ShortCommitID=0d7408fc9969 -X github.com/minio/minio/cmd.CopyrightYear=2025" -o /out/minio .
+
+FROM apache/spark:3.5.8-scala2.12-java17-python3-ubuntu
+USER root
+COPY --from=builder /out/minio /usr/local/bin/minio
+COPY --from=builder /source/LICENSE /licenses/minio-LICENSE
+COPY --from=builder /source/CREDITS /licenses/minio-CREDITS
+WORKDIR /data
+ENTRYPOINT ["minio"]

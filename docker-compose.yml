@@ -1,0 +1,78 @@
+name: hasd-lab2
+x-spark: &spark
+  image: hasd-lab2-spark:3.5.8
+  init: true
+  environment: &environment
+    MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Создайте .env}
+    MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Создайте .env}
+    S3_ENDPOINT: http://minio:9000
+    RAW_DIR: /workspace/data/raw
+    RESULTS_DIR: /workspace/results/full
+    TARGET_MIB: ${TARGET_MIB:-550}
+    MAX_HOURS: ${MAX_HOURS:-168}
+    START_UTC: ${START_UTC:-2024-10-01T00:00:00Z}
+  volumes:
+    - ./data:/workspace/data
+    - ./results:/workspace/results
+  networks: [lab]
+services:
+  minio:
+    image: hasd-lab2-minio:RELEASE.2025-04-22T22-12-26Z
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.minio
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Создайте .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Создайте .env}
+    ports: ["127.0.0.1:9000:9000", "127.0.0.1:9001:9001"]
+    volumes: [minio-data:/data]
+    mem_limit: 1g
+    networks: [lab]
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  minio-init:
+    <<: *spark
+    mem_limit: 512m
+    depends_on:
+      minio: {condition: service_healthy}
+    environment: *environment
+    entrypoint: [java]
+    command: [-cp, '/opt/lab/hasd-lab2.jar:/opt/spark/jars/*', ru.hasd.Main, init]
+  spark-master:
+    <<: *spark
+    build: .
+    hostname: spark-master
+    entrypoint: [/opt/spark/bin/spark-class]
+    command: [org.apache.spark.deploy.master.Master, --host, spark-master, --port, "7077", --webui-port, "8080"]
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:4040:4040"]
+    mem_limit: 4g
+    depends_on:
+      minio-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, bash, -c, 'exec 3<>/dev/tcp/spark-master/7077']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  spark-worker:
+    <<: *spark
+    hostname: spark-worker
+    entrypoint: [/opt/spark/bin/spark-class]
+    command: [org.apache.spark.deploy.worker.Worker, --cores, "2", --memory, 3g, --webui-port, "8081", spark://spark-master:7077]
+    ports: ["127.0.0.1:8081:8081"]
+    mem_limit: 4g
+    depends_on:
+      spark-master: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, bash, -c, 'exec 3<>/dev/tcp/localhost/8081']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+volumes:
+  minio-data:
+networks:
+  lab:
+    driver: bridge

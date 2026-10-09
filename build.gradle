@@ -1,0 +1,28 @@
+plugins { id 'java' }
+if (JavaVersion.current() != JavaVersion.VERSION_17) {
+    throw new GradleException('Запускайте Gradle на Java 17: задайте JAVA_HOME или используйте scripts/start.ps1')
+}
+group = 'ru.hasd'
+version = '1.0.0'
+repositories { mavenCentral() }
+java { toolchain { languageVersion = JavaLanguageVersion.of(17) } }
+configurations { s3 }
+dependencies {
+    compileOnly 'org.apache.spark:spark-sql_2.12:3.5.8'
+    implementation 'com.amazonaws:aws-java-sdk-bundle:1.12.262'
+    s3('org.apache.hadoop:hadoop-aws:3.3.4') { transitive = false }
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8'; options.release = 17 }
+test { useJUnitPlatform() }
+jar { archiveFileName = 'hasd-lab2.jar'; manifest { attributes 'Main-Class': 'ru.hasd.Main' } }
+tasks.register('copyDependencies', Copy) { from configurations.runtimeClasspath, configurations.s3; into layout.buildDirectory.dir('dependencies') }
+tasks.register('download', JavaExec) {
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ru.hasd.Main'
+    args 'download'
+    jvmArgs '-Dfile.encoding=UTF-8', '-Dstdout.encoding=UTF-8', '-Dstderr.encoding=UTF-8'
+    javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(17) }
+}
+build.dependsOn copyDependencies

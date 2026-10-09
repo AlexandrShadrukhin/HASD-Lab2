@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!docker/
+!docker/log4j2.properties
+!docker/Dockerfile.minio
+!build/
+!build/dependencies/
+!build/dependencies/*.jar
+!build/libs/
+!build/libs/hasd-lab2.jar
